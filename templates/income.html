@@ -1,0 +1,473 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <div class="container-fluid" style="max-width: 1600px; margin: 0 auto;">
+        <!-- 搜索部分 -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <form method="GET" class="row g-3 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label fs-6">缴纳人</label>
+                        <input type="text" class="form-control form-control-lg" name="user" placeholder="请输入缴纳人"
+                               value="{{ request.args.get('user', '') }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fs-6">缴纳日期</label>
+                        <input type="date" class="form-control form-control-lg" name="date"
+                               value="{{ request.args.get('date', '') }}">
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="bi bi-search"></i> 搜索
+                        </button>
+                        <a href="{{ url_for('income') }}" class="btn btn-secondary btn-lg">
+                            <i class="bi bi-arrow-counterclockwise"></i> 重置
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- 操作按钮 -->
+        <div class="mb-3">
+            <button class="btn btn-primary btn-lg" data-bs-toggle="modal" data-bs-target="#addIncomeModal">
+                <i class="bi bi-plus-lg"></i> 新增
+            </button>
+            <button class="btn btn-success btn-lg" data-bs-toggle="modal" data-bs-target="#importIncomeModal">
+                <i class="bi bi-upload"></i> 批量导入
+            </button>
+        </div>
+
+        <!-- 数据表格 -->
+        <div class="card">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                        <tr>
+                            <th style="width: 15%" class="fs-6">收入编号</th>
+                            <th style="width: 15%" class="fs-6">缴纳人</th>
+                            <th style="width: 15%" class="fs-6">缴纳额度</th>
+                            <th style="width: 15%" class="fs-6">缴纳日期</th>
+                            <th style="width: 10%" class="fs-6">操作</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {% for income in incomes %}
+                            <tr data-id="{{ income.id }}">
+                                <td class="text-truncate fs-6" style="max-width: 150px;">{{ income.income_no }}</td>
+                                <td class="text-truncate fs-6" style="max-width: 150px;">{{ income.user }}</td>
+                                <td class="text-truncate fs-6" style="max-width: 150px;">
+                                    ¥{{ "%.2f"|format(income.amount) }}</td>
+                                <td class="text-truncate fs-6"
+                                    style="max-width: 150px;">{{ income.date.strftime('%Y-%m-%d') }}</td>
+                                <td>
+                                    <div class="btn-group">
+                                        <button class="btn btn-outline-primary" onclick="editIncome({{ income.id }})"
+                                                title="编辑">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <button class="btn btn-outline-danger" onclick="deleteIncome({{ income.id }})"
+                                                title="删除">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 分页 -->
+                <!-- 分页 -->
+                <nav aria-label="Page navigation" class="mt-4">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <select class="form-select form-select-lg d-inline-block w-auto"
+                                    onchange="changePerPage(this.value)">
+                                <option value="10" {% if request.args.get('per_page') == '10' %}selected{% endif %}>
+                                    10条/页
+                                </option>
+                                <option value="20" {% if request.args.get('per_page') == '20' %}selected{% endif %}>
+                                    20条/页
+                                </option>
+                                <option value="50" {% if request.args.get('per_page') == '50' %}selected{% endif %}>
+                                    50条/页
+                                </option>
+                            </select>
+                        </div>
+                        <ul class="pagination mb-0">
+                            {% if pagination.has_prev %}
+                                <li class="page-item">
+                                    <a class="page-link"
+                                       href="{{ url_for('income', page=pagination.prev_num, user=request.args.get('user', ''), date=request.args.get('date', ''), per_page=request.args.get('per_page', 10)) }}">&laquo;</a>
+                                </li>
+                            {% endif %}
+
+                            {% for page in pagination.iter_pages() %}
+                                {% if page %}
+                                    <li class="page-item {% if page == pagination.page %}active{% endif %}">
+                                        <a class="page-link"
+                                           href="{{ url_for('income', page=page, user=request.args.get('user', ''), date=request.args.get('date', ''), per_page=request.args.get('per_page', 10)) }}">{{ page }}</a>
+                                    </li>
+                                {% else %}
+                                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                                {% endif %}
+                            {% endfor %}
+
+                            {% if pagination.has_next %}
+                                <li class="page-item">
+                                    <a class="page-link"
+                                       href="{{ url_for('income', page=pagination.next_num, user=request.args.get('user', ''), date=request.args.get('date', ''), per_page=request.args.get('per_page', 10)) }}">&raquo;</a>
+                                </li>
+                            {% endif %}
+                        </ul>
+                    </div>
+                </nav>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新增收入模态框 -->
+    <div class="modal fade" id="addIncomeModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fs-5">新增收入</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addIncomeForm">
+                        <div class="mb-3">
+                            <label class="form-label fs-6">缴纳人 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control form-control-lg" name="user" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fs-6">缴纳额度 <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control form-control-lg" name="amount" step="0.01"
+                                   required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fs-6">缴纳日期 <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control form-control-lg" name="date" required>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-lg" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary btn-lg" onclick="submitIncome()">确定</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 批量导入模态框 -->
+    <div class="modal fade" id="importIncomeModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fs-5">批量导入收入记录</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="text-end mb-3">
+                        <a href="/api/income/template" class="text-primary text-decoration-none fs-6">
+                            <i class="bi bi-download"></i> 下载模板
+                        </a>
+                    </div>
+                    <div class="border border-2 border-dashed rounded p-5 text-center" id="dropZone">
+                        <i class="bi bi-file-earmark-excel display-4 text-primary mb-3"></i>
+                        <p class="mb-0 fs-6">点击或将文件拖拽到这里上传</p>
+                        <p class="text-muted small">单次最多可导入1000条数据，支持扩展名：.xlsx，.xls</p>
+                        <input type="file" id="fileInput" class="d-none" accept=".xlsx,.xls">
+                    </div>
+                    <!-- 文件预览区域 -->
+                    <div id="filePreview" class="mt-3 d-none">
+                        <div class="d-flex align-items-center p-2 bg-light rounded">
+                            <i class="bi bi-file-earmark-excel text-primary me-2"></i>
+                            <div class="flex-grow-1">
+                                <p class="mb-0 fs-6" id="fileName"></p>
+                                <small class="text-muted" id="fileSize"></small>
+                            </div>
+                            <button class="btn btn-outline-danger" onclick="removeFile()">
+                                <i class="bi bi-x"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <!-- 上传进度条 -->
+                    <div id="uploadProgress" class="mt-3 d-none">
+                        <div class="progress">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated"
+                                 role="progressbar"
+                                 style="width: 0%"
+                                 id="progressBar">0%
+                            </div>
+                        </div>
+                    </div>
+                    <div id="uploadError" class="text-danger mt-2 d-none fs-6">请上传文件</div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-lg" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary btn-lg" onclick="submitImport()" id="submitImportBtn">
+                        确定
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+{% endblock %}
+
+{% block scripts %}
+    <script>
+        // 文件上传相关代码
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const uploadError = document.getElementById('uploadError');
+        const submitImportBtn = document.getElementById('submitImportBtn');
+        const filePreview = document.getElementById('filePreview');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+        const uploadProgress = document.getElementById('uploadProgress');
+        const progressBar = document.getElementById('progressBar');
+        let selectedFile = null;
+
+        // 点击上传区域触发文件选择
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        // 文件选择改变
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        // 拖拽文件
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('border-primary');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('border-primary');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-primary');
+            if (e.dataTransfer.files.length > 0) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        // 处理选择的文件
+        function handleFile(file) {
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (ext !== 'xlsx' && ext !== 'xls') {
+                alert('只支持 .xlsx 和 .xls 格式的文件');
+                return;
+            }
+            selectedFile = file;
+            uploadError.classList.add('d-none');
+            submitImportBtn.disabled = false;
+
+            // 显示文件预览
+            fileName.textContent = file.name;
+            fileSize.textContent = formatFileSize(file.size);
+            filePreview.classList.remove('d-none');
+            uploadProgress.classList.add('d-none');
+        }
+
+        // 移除文件
+        function removeFile() {
+            selectedFile = null;
+            fileInput.value = '';
+            filePreview.classList.add('d-none');
+            uploadProgress.classList.add('d-none');
+            submitImportBtn.disabled = true;
+        }
+
+        // 格式化文件大小
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // 提交导入
+        function submitImport() {
+            if (!selectedFile) {
+                uploadError.classList.remove('d-none');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+
+            submitImportBtn.disabled = true;
+            uploadProgress.classList.remove('d-none');
+            progressBar.style.width = '0%';
+            progressBar.textContent = '0%';
+
+            // 模拟上传进度
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += 5;
+                if (progress <= 90) {
+                    progressBar.style.width = progress + '%';
+                    progressBar.textContent = progress + '%';
+                }
+            }, 100);
+
+            fetch('/api/income/import', {
+                method: 'POST',
+                body: formData
+            })
+                .then(response => response.json())
+                .then(data => {
+                    clearInterval(interval);
+                    progressBar.style.width = '100%';
+                    progressBar.textContent = '100%';
+
+                    if (data.success) {
+                        setTimeout(() => {
+                            alert('导入成功');
+                            const modal = bootstrap.Modal.getInstance(document.getElementById('importIncomeModal'));
+                            modal.hide();
+                            window.location.reload();
+                        }, 500);
+                    } else {
+                        alert(data.message || '导入失败');
+                    }
+                })
+                .catch(error => {
+                    clearInterval(interval);
+                    alert('导入失败：' + error);
+                })
+                .finally(() => {
+                    submitImportBtn.disabled = false;
+                });
+        }
+
+        // 在打开新增模态框时重置表单和标题
+        document.getElementById('addIncomeModal').addEventListener('show.bs.modal', function (event) {
+            // 如果是点击新增按钮打开的模态框
+            if (event.relatedTarget && event.relatedTarget.getAttribute('data-bs-target') === '#addIncomeModal') {
+                const form = document.getElementById('addIncomeForm');
+                form.reset();
+                this.querySelector('.modal-title').textContent = '新增收入';
+                this.querySelector('.modal-footer .btn-primary').textContent = '确定';
+                this.querySelector('.modal-footer .btn-primary').onclick = submitIncome;
+            }
+        });
+
+        // 修改每页显示数量
+        function changePerPage(value) {
+            const url = new URL(window.location.href);
+            url.searchParams.set('per_page', value);
+            window.location.href = url.toString();
+        }
+
+        // 提交新增收入
+        function submitIncome() {
+            const form = document.getElementById('addIncomeForm');
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return;
+            }
+
+            const formData = new FormData(form);
+
+            fetch('/api/income', {
+                method: 'POST',
+                body: formData
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // 关闭模态框
+                        const modal = bootstrap.Modal.getInstance(document.getElementById('addIncomeModal'));
+                        modal.hide();
+                        // 刷新页面
+                        window.location.reload();
+                    } else {
+                        alert(data.message);
+                    }
+                });
+        }
+
+        // 编辑收入
+        function editIncome(id) {
+            // 获取当前行的数据
+            const row = document.querySelector(`tr[data-id="${id}"]`);
+            const user = row.querySelector('td:nth-child(2)').textContent;
+            const amount = row.querySelector('td:nth-child(3)').textContent.replace('¥', '');
+            const date = row.querySelector('td:nth-child(4)').textContent;
+
+            // 填充表单数据
+            const form = document.getElementById('addIncomeForm');
+            form.querySelector('[name="user"]').value = user;
+            form.querySelector('[name="amount"]').value = amount;
+            form.querySelector('[name="date"]').value = date;
+
+            // 修改模态框标题和按钮
+            const modal = document.getElementById('addIncomeModal');
+            modal.querySelector('.modal-title').textContent = '修改收入';
+            modal.querySelector('.modal-footer .btn-primary').textContent = '确定';
+            modal.querySelector('.modal-footer .btn-primary').onclick = () => submitEdit(id);
+
+            // 显示模态框
+            const modalInstance = new bootstrap.Modal(modal);
+            modalInstance.show();
+        }
+
+        // 提交编辑
+        function submitEdit(id) {
+            const form = document.getElementById('addIncomeForm');
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return;
+            }
+
+            const formData = new FormData(form);
+            formData.append('id', id);
+
+            fetch(`/api/income/${id}`, {
+                method: 'PUT',
+                body: formData
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // 关闭模态框
+                        const modal = bootstrap.Modal.getInstance(document.getElementById('addIncomeModal'));
+                        modal.hide();
+                        // 刷新页面
+                        window.location.reload();
+                    } else {
+                        alert(data.message);
+                    }
+                });
+        }
+
+        // 删除收入
+        function deleteIncome(id) {
+            if (confirm('确定要删除这条记录吗？')) {
+                fetch(`/api/income/${id}`, {
+                    method: 'DELETE'
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            window.location.reload();
+                        } else {
+                            alert(data.message);
+                        }
+                    });
+            }
+        }
+    </script>
+{% endblock %}
