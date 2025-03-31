@@ -55,7 +55,8 @@
         .navbar-brand {
             padding-top: .75rem;
             padding-bottom: .75rem;
-            font-size: 1rem;
+            font-size: 1.5rem;
+            font-weight: bold;
             background-color: rgba(0, 0, 0, .25);
             box-shadow: inset -1px 0 0 rgba(0, 0, 0, .25);
         }
@@ -122,7 +123,9 @@
         </button>
         <div class="w-100"></div>
         <div class="navbar-nav">
-            <div class="nav-item text-nowrap">
+            <div class="nav-item text-nowrap d-flex align-items-center">
+                <span class="nav-link px-3 text-light">{{ current_user.name }}</span>
+                <a class="nav-link px-3" href="{{ url_for('change_password') }}">修改密码</a>
                 <a class="nav-link px-3" href="/logout">退出登录</a>
             </div>
         </div>

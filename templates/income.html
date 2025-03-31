@@ -17,10 +17,10 @@
                                value="{{ request.args.get('date', '') }}">
                     </div>
                     <div class="col-md-6 text-end">
-                        <button type="submit" class="btn btn-primary btn-lg">
+                        <button type="submit" class="btn btn-primary">
                             <i class="bi bi-search"></i> 搜索
                         </button>
-                        <a href="{{ url_for('income') }}" class="btn btn-secondary btn-lg">
+                        <a href="{{ url_for('income') }}" class="btn btn-secondary">
                             <i class="bi bi-arrow-counterclockwise"></i> 重置
                         </a>
                     </div>
@@ -30,10 +30,10 @@
 
         <!-- 操作按钮 -->
         <div class="mb-3">
-            <button class="btn btn-primary btn-lg" data-bs-toggle="modal" data-bs-target="#addIncomeModal">
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addIncomeModal">
                 <i class="bi bi-plus-lg"></i> 新增
             </button>
-            <button class="btn btn-success btn-lg" data-bs-toggle="modal" data-bs-target="#importIncomeModal">
+            <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#importIncomeModal">
                 <i class="bi bi-upload"></i> 批量导入
             </button>
         </div>
@@ -212,6 +212,39 @@
                     <button type="button" class="btn btn-primary btn-lg" onclick="submitImport()" id="submitImportBtn">
                         确定
                     </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑收入模态框 -->
+    <div class="modal fade" id="incomeModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fs-5" id="incomeModalLabel">编辑收入</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="incomeForm">
+                        <input type="hidden" name="id">
+                        <div class="mb-3">
+                            <label class="form-label fs-6">缴纳人 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control form-control-lg" name="user" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fs-6">缴纳额度 <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control form-control-lg" name="amount" step="0.01" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fs-6">缴纳日期 <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control form-control-lg" name="date" required>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-lg" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary btn-lg" id="submitIncome" onclick="submitEdit()">保存修改</button>
                 </div>
             </div>
         </div>
@@ -401,39 +434,39 @@
 
         // 编辑收入
         function editIncome(id) {
-            // 获取当前行的数据
             const row = document.querySelector(`tr[data-id="${id}"]`);
-            const user = row.querySelector('td:nth-child(2)').textContent;
-            const amount = row.querySelector('td:nth-child(3)').textContent.replace('¥', '');
-            const date = row.querySelector('td:nth-child(4)').textContent;
-
+            const form = document.getElementById('incomeForm');
+            
             // 填充表单数据
-            const form = document.getElementById('addIncomeForm');
-            form.querySelector('[name="user"]').value = user;
-            form.querySelector('[name="amount"]').value = amount;
-            form.querySelector('[name="date"]').value = date;
-
-            // 修改模态框标题和按钮
-            const modal = document.getElementById('addIncomeModal');
-            modal.querySelector('.modal-title').textContent = '修改收入';
-            modal.querySelector('.modal-footer .btn-primary').textContent = '确定';
-            modal.querySelector('.modal-footer .btn-primary').onclick = () => submitEdit(id);
-
+            form.querySelector('[name="id"]').value = id;
+            form.querySelector('[name="user"]').value = row.querySelector('td:nth-child(2)').textContent;
+            
+            // 处理金额显示
+            const amountText = row.querySelector('td:nth-child(3)').textContent;
+            const amount = parseFloat(amountText.replace('¥', '').replace(/,/g, ''));
+            form.querySelector('[name="amount"]').value = amount.toFixed(2);
+            
+            form.querySelector('[name="date"]').value = row.querySelector('td:nth-child(4)').textContent;
+            
+            // 更新模态框标题和按钮
+            document.getElementById('incomeModalLabel').textContent = '修改收入';
+            document.getElementById('submitIncome').textContent = '保存修改';
+            
             // 显示模态框
-            const modalInstance = new bootstrap.Modal(modal);
-            modalInstance.show();
+            const modal = new bootstrap.Modal(document.getElementById('incomeModal'));
+            modal.show();
         }
 
         // 提交编辑
-        function submitEdit(id) {
-            const form = document.getElementById('addIncomeForm');
+        function submitEdit() {
+            const form = document.getElementById('incomeForm');
             if (!form.checkValidity()) {
                 form.reportValidity();
                 return;
             }
 
             const formData = new FormData(form);
-            formData.append('id', id);
+            const id = formData.get('id');
 
             fetch(`/api/income/${id}`, {
                 method: 'PUT',
@@ -443,7 +476,7 @@
                 .then(data => {
                     if (data.success) {
                         // 关闭模态框
-                        const modal = bootstrap.Modal.getInstance(document.getElementById('addIncomeModal'));
+                        const modal = bootstrap.Modal.getInstance(document.getElementById('incomeModal'));
                         modal.hide();
                         // 刷新页面
                         window.location.reload();

@@ -15,14 +15,6 @@ import os
 from datetime import datetime
 import pandas as pd
 from werkzeug.utils import secure_filename
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file
-from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
-from werkzeug.security import generate_password_hash, check_password_hash
-import os
-from datetime import datetime
-import pandas as pd
-from werkzeug.utils import secure_filename
 from io import BytesIO  # 添加这行导入
 from functools import wraps
 import json
@@ -113,19 +105,43 @@ class Role(db.Model):
         return permission in self.permission_list
 
 
-# 用户模型
-class User(UserMixin, db.Model):
+# 学生模型
+class Student(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    phone = db.Column(db.String(11), unique=True, nullable=False)
-    name = db.Column(db.String(80), nullable=False)
-    password_hash = db.Column(db.String(120), nullable=False)
-    role = db.Column(db.String(20), nullable=False, default='user')
+    student_no = db.Column(db.String(20), unique=True, nullable=False)
+    name = db.Column(db.String(50), nullable=False)
+    phone = db.Column(db.String(20), nullable=False)
+    email = db.Column(db.String(100), nullable=False)
+    role = db.Column(db.String(20), nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='启用')
+    password_hash = db.Column(db.String(120), nullable=False, default='123456')  # 添加密码字段
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Flask-Login required attributes
+    is_active = True
+    is_authenticated = True
+    is_anonymous = False
+
+    def get_id(self):
+        return str(self.id)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'student_no': self.student_no,
+            'name': self.name,
+            'phone': self.phone,
+            'email': self.email,
+            'role': self.role,
+            'status': self.status,
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S')
+        }
 
 
 # 支出模型
@@ -159,52 +175,6 @@ class Expense(db.Model):
         super(Expense, self).__init__(**kwargs)
         if not self.expense_no:
             self.expense_no = self.generate_expense_no(self.date)
-
-
-# 学生模型
-class Student(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    student_no = db.Column(db.String(20), unique=True, nullable=False)
-    name = db.Column(db.String(50), nullable=False)
-    phone = db.Column(db.String(20), nullable=False)
-    email = db.Column(db.String(100), nullable=False)
-    role = db.Column(db.String(20), nullable=False)
-    status = db.Column(db.String(20), nullable=False, default='启用')
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'student_no': self.student_no,
-            'name': self.name,
-            'phone': self.phone,
-            'email': self.email,
-            'role': self.role,
-            'status': self.status,
-            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S')
-        }
-
-
-# # 权限模型
-# class Role(db.Model):
-#     __tablename__ = 'roles'
-#
-#     id = db.Column(db.Integer, primary_key=True)
-#     role_no = db.Column(db.String(20), unique=True, nullable=False)
-#     name = db.Column(db.String(50), nullable=False)
-#     permissions = db.Column(db.Text, nullable=False)
-#     status = db.Column(db.String(10), nullable=False, default='启用')
-#     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-#
-#     def to_dict(self):
-#         return {
-#             'id': self.id,
-#             'role_no': self.role_no,
-#             'name': self.name,
-#             'permissions': self.permissions,
-#             'status': self.status,
-#             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S')
-#         }
 
 
 # 收入记录模型
@@ -562,7 +532,7 @@ def create_test_students():
     if not Student.query.first():
         test_students = [
             Student(
-                student_no='20240001',  # 修改为8位数字
+                student_no='20240001',
                 name='张三',
                 phone='13800138000',
                 email='zhangsan@example.com',
@@ -570,7 +540,7 @@ def create_test_students():
                 status='启用'
             ),
             Student(
-                student_no='20240002',  # 修改为8位数字
+                student_no='20240002',
                 name='李四',
                 phone='13800138001',
                 email='lisi@example.com',
@@ -578,7 +548,7 @@ def create_test_students():
                 status='启用'
             ),
             Student(
-                student_no='20240003',  # 修改为8位数字
+                student_no='20240003',
                 name='王五',
                 phone='13800138002',
                 email='wangwu@example.com',
@@ -586,16 +556,16 @@ def create_test_students():
                 status='启用'
             ),
             Student(
-                student_no='20240004',  # 修改为8位数字
+                student_no='20240004',
                 name='林六',
                 phone='13800138003',
                 email='lingliu@example.com',
                 role='管理员',
                 status='启用'
             )
-
         ]
         for student in test_students:
+            student.set_password('123456')  # 设置初始密码
             db.session.add(student)
         db.session.commit()
 
@@ -828,7 +798,7 @@ def create_test_incomes():
 
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    return Student.query.get(int(user_id))
 
 
 @app.route('/')
@@ -840,17 +810,16 @@ def index():
 def login():
     if request.method == 'POST':
         phone = request.form.get('phone')
-        verification_code = request.form.get('verification_code')
+        password = request.form.get('password')
 
-        if verification_code == '1234':
-            user = User.query.filter_by(phone=phone).first()
-            if user:
-                login_user(user)
-                return redirect(url_for('expenses'))
-            else:
-                flash('用户不存在')
+        # 查找学生
+        student = Student.query.filter_by(phone=phone).first()
+        if student and student.check_password(password):
+            # 直接使用学生对象登录
+            login_user(student)
+            return redirect(url_for('expenses'))
         else:
-            flash('验证码错误')
+            flash('手机号或密码错误')
     return render_template('login.html')
 
 
@@ -979,15 +948,17 @@ def get_expenses():
 
 def create_test_user():
     with app.app_context():
-        test_user = User.query.filter_by(phone='13800138000').first()
+        test_user = Student.query.filter_by(phone='13800138000').first()
         if not test_user:
-            test_user = User(
+            test_user = Student(
+                student_no='13800138000',
+                name='张三',
                 phone='13800138000',
-                name='测试用户',
-                # role='admin'
-                role='管理员'
+                email='test@example.com',
+                role='管理员',
+                status='启用'
             )
-            test_user.set_password('1234')
+            test_user.set_password('123456')
             db.session.add(test_user)
             db.session.commit()
 
@@ -1003,29 +974,29 @@ def create_test_expenses():
                 Expense(user='王五', type='文具用品', amount=200, purpose='购买文具', date=datetime(2024, 1, 25)),
 
                 # 2月数据
-                Expense(user='赵六', type='教师礼物', amount=600, purpose='教师节礼物', date=datetime(2024, 2, 10)),
-                Expense(user='钱七', type='活动经费', amount=1000, purpose='班级活动', date=datetime(2024, 2, 15)),
-                Expense(user='孙八', type='文具用品', amount=300, purpose='购买教材', date=datetime(2024, 2, 20)),
+                Expense(user='张三', type='教师礼物', amount=600, purpose='教师节礼物', date=datetime(2024, 2, 10)),
+                Expense(user='李四', type='活动经费', amount=1000, purpose='班级活动', date=datetime(2024, 2, 15)),
+                Expense(user='王五', type='文具用品', amount=300, purpose='购买教材', date=datetime(2024, 2, 20)),
 
                 # 3月数据
-                Expense(user='周九', type='教师礼物', amount=400, purpose='教师节礼物', date=datetime(2024, 3, 5)),
-                Expense(user='吴十', type='活动经费', amount=1200, purpose='班级春游', date=datetime(2024, 3, 10)),
-                Expense(user='郑十一', type='文具用品', amount=250, purpose='购买文具', date=datetime(2024, 3, 15)),
+                Expense(user='张三', type='教师礼物', amount=400, purpose='教师节礼物', date=datetime(2024, 3, 5)),
+                Expense(user='李四', type='活动经费', amount=1200, purpose='班级春游', date=datetime(2024, 3, 10)),
+                Expense(user='王五', type='文具用品', amount=250, purpose='购买文具', date=datetime(2024, 3, 15)),
 
                 # 4月数据
-                Expense(user='王十二', type='教师礼物', amount=550, purpose='教师节礼物', date=datetime(2024, 4, 1)),
-                Expense(user='李十三', type='活动经费', amount=900, purpose='班级活动', date=datetime(2024, 4, 5)),
-                Expense(user='张十四', type='文具用品', amount=180, purpose='购买文具', date=datetime(2024, 4, 10)),
+                Expense(user='张三', type='教师礼物', amount=550, purpose='教师节礼物', date=datetime(2024, 4, 1)),
+                Expense(user='李四', type='活动经费', amount=900, purpose='班级活动', date=datetime(2024, 4, 5)),
+                Expense(user='王五', type='文具用品', amount=180, purpose='购买文具', date=datetime(2024, 4, 10)),
 
                 # 5月数据
-                Expense(user='刘十五', type='教师礼物', amount=450, purpose='教师节礼物', date=datetime(2024, 5, 1)),
-                Expense(user='陈十六', type='活动经费', amount=1100, purpose='班级活动', date=datetime(2024, 5, 5)),
-                Expense(user='杨十七', type='文具用品', amount=220, purpose='购买文具', date=datetime(2024, 5, 10)),
+                Expense(user='张三', type='教师礼物', amount=450, purpose='教师节礼物', date=datetime(2024, 5, 1)),
+                Expense(user='李四', type='活动经费', amount=1100, purpose='班级活动', date=datetime(2024, 5, 5)),
+                Expense(user='王五', type='文具用品', amount=220, purpose='购买文具', date=datetime(2024, 5, 10)),
 
                 # 6月数据
-                Expense(user='黄十八', type='教师礼物', amount=480, purpose='教师节礼物', date=datetime(2024, 6, 1)),
-                Expense(user='赵十九', type='活动经费', amount=950, purpose='班级活动', date=datetime(2024, 6, 5)),
-                Expense(user='周二十', type='文具用品', amount=280, purpose='购买文具', date=datetime(2024, 6, 10)),
+                Expense(user='张三', type='教师礼物', amount=480, purpose='教师节礼物', date=datetime(2024, 6, 1)),
+                Expense(user='李四', type='活动经费', amount=950, purpose='班级活动', date=datetime(2024, 6, 5)),
+                Expense(user='王五', type='文具用品', amount=280, purpose='购买文具', date=datetime(2024, 6, 10)),
             ]
             for expense in test_expenses:
                 db.session.add(expense)
@@ -1099,7 +1070,12 @@ def update_expense(id):
         expense = Expense.query.get_or_404(id)
 
         # 更新数据
-        expense.user = request.form.get('user')
+        expense.student_no = request.form.get('student_no')
+        expense.name = request.form.get('name')
+        expense.phone = request.form.get('phone')
+        expense.email = request.form.get('email')
+        expense.role = request.form.get('role')
+        expense.status = request.form.get('status')
         expense.type = request.form.get('type')
         expense.amount = float(request.form.get('amount'))
         expense.purpose = request.form.get('purpose')
@@ -1141,7 +1117,12 @@ def import_expenses():
         # 导入数据
         for _, row in df.iterrows():
             expense = Expense(
-                user=row['使用人'],
+                student_no=row['使用人'],
+                name=row['使用人'],
+                phone=row['使用人'],
+                email=row['使用人'],
+                role=row['使用类型'],
+                status='启用',
                 type=row['使用类型'],
                 amount=float(row['使用额度']),
                 purpose=row['用途'],
@@ -1155,6 +1136,44 @@ def import_expenses():
         db.session.rollback()
         return jsonify({'success': False, 'message': f'导入失败：{str(e)}'})
 
+
+# 修改密码
+@app.route('/change_password', methods=['GET', 'POST'])
+@login_required
+def change_password():
+    if request.method == 'POST':
+        old_password = request.form.get('old_password')
+        new_password = request.form.get('new_password')
+        confirm_password = request.form.get('confirm_password')
+
+        if new_password != confirm_password:
+            flash('新密码和确认密码不一致')
+            return redirect(url_for('change_password'))
+
+        student = Student.query.get(current_user.id)
+        if student and student.check_password(old_password):
+            student.set_password(new_password)
+            db.session.commit()
+            flash('密码修改成功')
+            return redirect(url_for('expenses'))
+        else:
+            flash('原密码错误')
+    return render_template('change_password.html')
+
+# 重置密码
+@app.route('/reset_password/<int:student_id>')
+@login_required
+@permission_required(Permissions.STUDENT_EDIT)
+def reset_password(student_id):
+    if not check_permission(Permissions.STUDENT_EDIT):
+        flash('您没有该权限')
+        return redirect(url_for('index'))
+    
+    student = Student.query.get_or_404(student_id)
+    student.set_password('123456')
+    db.session.commit()
+    flash('密码已重置为123456')
+    return redirect(url_for('students'))
 
 # 初始化数据库和测试数据
 def init_db():
@@ -1176,5 +1195,5 @@ if __name__ == '__main__':
         init_db()
         # 启动应用
         # app.run(host="0.0.0.0", port=5000, debug=True)
-        app.run(host='0.0.0.0', port=8899, debug=True)
+        app.run(host='0.0.0.0', port=8090, debug=True)
 
