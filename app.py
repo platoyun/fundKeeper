@@ -1194,6 +1194,5 @@ if __name__ == '__main__':
         # 初始化数据库和测试数据
         init_db()
         # 启动应用
-        # app.run(host="0.0.0.0", port=5000, debug=True)
-        app.run(host='0.0.0.0', port=8090, debug=True)
+        app.run(host='0.0.0.0', debug=True)
 
