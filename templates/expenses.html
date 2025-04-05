@@ -110,7 +110,7 @@
                                 <td class="text-truncate" style="max-width: 300px;"
                                     title="{{ expense.purpose }}">{{ expense.purpose }}</td>
                                 <td class="text-truncate"
-                                    style="max-width: 100px;">{{ expense.date.strftime('%Y-%m-%d') }}</td>
+                                    style="max-width: 100px;">{{ expense.date_str }}</td>
                                 <td>
                                     <div class="btn-group btn-group-sm">
                                         <button class="btn btn-outline-primary" onclick="editExpense({{ expense.id }})"
@@ -448,45 +448,59 @@
                     new Chart(monthlyCtx, {
                         type: 'line',
                         data: {
-                            labels: data.expense_monthly_data.map(item => item.month + '月'),
+                            labels: data.expense_monthly_data.map(item => item.month),
                             datasets: [
                                 {
-                                    label: '支出金额',
+                                    label: '支出',
                                     data: data.expense_monthly_data.map(item => item.total),
                                     borderColor: 'rgb(255, 99, 132)',
                                     backgroundColor: 'rgba(255, 99, 132, 0.1)',
                                     tension: 0.1
                                 },
                                 {
-                                    label: '收入金额',
+                                    label: '收入',
                                     data: data.income_monthly_data.map(item => item.total),
                                     borderColor: 'rgb(75, 192, 192)',
                                     backgroundColor: 'rgba(75, 192, 192, 0.1)',
                                     tension: 0.1
+                                },
+                                {
+                                    label: '累计净额',
+                                    data: data.net_monthly_data.map(item => item.total),
+                                    borderColor: 'rgb(54, 162, 235)',
+                                    backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                                    tension: 0.1,
+                                    yAxisID: 'y1'
                                 }
                             ]
                         },
                         options: {
                             responsive: true,
                             maintainAspectRatio: false,
-                            scales: {
-                                y: {
-                                    beginAtZero: true,
-                                    ticks: {
-                                        callback: function (value) {
-                                            return '¥' + value.toLocaleString();
+                            plugins: {
+                                tooltip: {
+                                    callbacks: {
+                                        label: function(context) {
+                                            return context.dataset.label + ': ¥' + context.parsed.y.toLocaleString();
                                         }
                                     }
                                 }
                             },
-                            plugins: {
-                                legend: {
-                                    position: 'top'
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    ticks: {
+                                        callback: function(value) {
+                                            return '¥' + value.toLocaleString();
+                                        }
+                                    }
                                 },
-                                tooltip: {
-                                    callbacks: {
-                                        label: function (context) {
-                                            return context.dataset.label + ': ¥' + context.parsed.y.toLocaleString();
+                                y1: {
+                                    position: 'right',
+                                    beginAtZero: true,
+                                    ticks: {
+                                        callback: function(value) {
+                                            return '¥' + value.toLocaleString();
                                         }
                                     }
                                 }

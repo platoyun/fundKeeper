@@ -153,10 +153,22 @@ class Expense(db.Model):
     amount = db.Column(db.Float, nullable=False)  # 使用额度
     purpose = db.Column(db.String(200))  # 用途
     date = db.Column(db.Date, nullable=False)  # 使用日期
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    @property
+    def created_at_datetime(self):
+        if isinstance(self.created_at, (int, float)):
+            return datetime.fromtimestamp(float(self.created_at)/1000)
+        return self.created_at
 
     @staticmethod
     def generate_expense_no(date):
+        # 确保date是datetime对象
+        if isinstance(date, str):
+            date = datetime.strptime(date, '%Y-%m-%d')
+        elif isinstance(date, (int, float)):
+            date = datetime.fromtimestamp(float(date)/1000)
+        
         date_str = date.strftime('%Y%m%d')
         # 获取指定日期的最大编号
         last_expense = Expense.query.filter(
@@ -171,7 +183,37 @@ class Expense(db.Model):
 
         return f'{date_str}{new_number:03d}'
 
+    @property
+    def date_str(self):
+        if isinstance(self.date, (int, float)):
+            return datetime.fromtimestamp(float(self.date)/1000).strftime('%Y-%m-%d')
+        elif isinstance(self.date, str):
+            return self.date
+        elif isinstance(self.date, datetime):
+            return self.date.strftime('%Y-%m-%d')
+        return str(self.date)
+
     def __init__(self, **kwargs):
+        # 确保日期格式正确
+        if 'date' in kwargs:
+            date_value = kwargs['date']
+            if isinstance(date_value, (int, float)) or (isinstance(date_value, str) and date_value.isdigit()):
+                # 如果是时间戳（毫秒）
+                kwargs['date'] = datetime.fromtimestamp(float(date_value)/1000).date()
+            elif isinstance(date_value, str):
+                # 如果是日期字符串
+                kwargs['date'] = datetime.strptime(date_value, '%Y-%m-%d').date()
+            elif isinstance(date_value, datetime):
+                # 如果是datetime对象
+                kwargs['date'] = date_value.date()
+        
+        # 确保created_at被设置
+        if 'created_at' not in kwargs:
+            kwargs['created_at'] = datetime.utcnow()
+        elif isinstance(kwargs['created_at'], (int, float)):
+            # 如果是时间戳，转换为datetime
+            kwargs['created_at'] = datetime.fromtimestamp(float(kwargs['created_at'])/1000)
+        
         super(Expense, self).__init__(**kwargs)
         if not self.expense_no:
             self.expense_no = self.generate_expense_no(self.date)
@@ -354,7 +396,7 @@ def students():
     per_page = request.args.get('per_page', 10, type=int)
 
     # 构建查询
-    query = Student.query
+    query = Student.query.filter(Student.role != '管理员')  # 排除管理员角色
 
     # 应用过滤条件
     name = request.args.get('name', '')
@@ -857,35 +899,194 @@ def expenses():
     if type:
         query = query.filter(Expense.type == type)
     if date:
-        query = query.filter(Expense.date == datetime.strptime(date, '%Y-%m-%d').date())
+        try:
+            # 尝试解析日期字符串
+            if isinstance(date, (int, float)) or (isinstance(date, str) and date.isdigit()):
+                # 如果是时间戳（毫秒）
+                date_obj = datetime.fromtimestamp(float(date)/1000).date()
+            else:
+                # 如果是日期字符串
+                date_obj = datetime.strptime(date, '%Y-%m-%d').date()
+            query = query.filter(Expense.date == date_obj)
+        except (ValueError, TypeError):
+            pass  # 如果日期解析失败，忽略日期过滤
+
+    # 获取当前日期和6个月前的日期
+    today = datetime.now()
+    six_months_ago = today.replace(day=1)  # 设置为当月1号
+    for _ in range(6):
+        if six_months_ago.month == 1:
+            six_months_ago = six_months_ago.replace(year=six_months_ago.year - 1, month=12)
+        else:
+            six_months_ago = six_months_ago.replace(month=six_months_ago.month - 1)
+
+    # 获取最早的记录日期
+    earliest_date = db.session.query(
+        db.func.min(db.func.date(Expense.date))
+    ).scalar()
+    earliest_income_date = db.session.query(
+        db.func.min(db.func.date(Income.date))
+    ).scalar()
+    
+    if earliest_income_date and earliest_date:
+        start_date = min(earliest_date, earliest_income_date)
+    elif earliest_income_date:
+        start_date = earliest_income_date
+    elif earliest_date:
+        start_date = earliest_date
+    else:
+        start_date = six_months_ago.date()
+
+    # 添加日期范围过滤
+    query = query.filter(Expense.date >= start_date)
+
+    print(f"Date range filter: from {start_date} to {today.date()}")  # 调试信息
 
     # 获取分页数据
-    pagination = query.order_by(Expense.date.desc()).paginate(page=page, per_page=per_page)
-    expenses = pagination.items
+    try:
+        # 获取所有记录
+        all_expenses = query.all()
+        print(f"Found {len(all_expenses)} expenses")  # 调试信息
+        
+        # 按日期排序（使用date_str属性）
+        sorted_expenses = sorted(all_expenses, key=lambda x: x.date_str, reverse=True)
+        # 手动进行分页
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        expenses = sorted_expenses[start_idx:end_idx]
+        
+        print(f"Displaying expenses from index {start_idx} to {end_idx}")  # 调试信息
+        for expense in expenses:
+            print(f"Expense: {expense.expense_no}, Date: {expense.date_str}")  # 调试信息
+            
+        total = len(all_expenses)
+        total_pages = (total + per_page - 1) // per_page
+        
+        # 创建分页对象
+        class Pagination:
+            def __init__(self, items, page, per_page, total, pages):
+                self.items = items
+                self.page = page
+                self.per_page = per_page
+                self.total = total
+                self.pages = pages
+                self.has_prev = page > 1
+                self.has_next = page < pages
+                self.prev_num = page - 1
+                self.next_num = page + 1
+
+            def iter_pages(self):
+                return range(1, self.pages + 1)
+
+        pagination = Pagination(
+            items=expenses,
+            page=page,
+            per_page=per_page,
+            total=total,
+            pages=total_pages
+        )
+    except Exception as e:
+        print(f"Error in pagination: {str(e)}")  # 调试信息
+        # 如果排序出错，尝试不带排序的分页
+        all_expenses = query.all()
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        expenses = all_expenses[start_idx:end_idx]
+        total = len(all_expenses)
+        total_pages = (total + per_page - 1) // per_page
+        
+        pagination = Pagination(
+            items=expenses,
+            page=page,
+            per_page=per_page,
+            total=total,
+            pages=total_pages
+        )
 
     # 获取支出统计数据
     expense_monthly_data = db.session.query(
-        db.func.strftime('%m', Expense.date).label('month'),
+        db.func.strftime('%Y-%m', Expense.date).label('month'),
         db.func.sum(Expense.amount).label('total')
-    ).group_by('month').all()
+    ).filter(
+        Expense.date >= start_date
+    ).group_by('month').order_by('month').all()
 
     expense_type_data = db.session.query(
         Expense.type,
         db.func.sum(Expense.amount).label('total')
+    ).filter(
+        Expense.date >= start_date
     ).group_by(Expense.type).all()
 
     # 获取收入统计数据
     income_monthly_data = db.session.query(
-        db.func.strftime('%m', Income.date).label('month'),
+        db.func.strftime('%Y-%m', Income.date).label('month'),
         db.func.sum(Income.amount).label('total')
-    ).group_by('month').all()
+    ).filter(
+        Income.date >= start_date
+    ).group_by('month').order_by('month').all()
+
+    # 获取所有历史数据用于计算累计净额
+    all_expenses = db.session.query(
+        db.func.strftime('%Y-%m', Expense.date).label('month'),
+        db.func.sum(Expense.amount).label('total')
+    ).group_by('month').order_by('month').all()
+
+    all_incomes = db.session.query(
+        db.func.strftime('%Y-%m', Income.date).label('month'),
+        db.func.sum(Income.amount).label('total')
+    ).group_by('month').order_by('month').all()
+
+    # 创建完整的月度数据，确保所有月份都有值
+    complete_expense_data = []
+    complete_income_data = []
+    complete_net_data = []
+
+    # 创建月份到金额的映射
+    expense_map = {month: total for month, total in all_expenses}
+    income_map = {month: total for month, total in all_incomes}
+
+    # 计算累计净额（使用所有历史数据）
+    cumulative_net = 0
+    all_months = set()
+    for month, _ in all_expenses:
+        all_months.add(month)
+    for month, _ in all_incomes:
+        all_months.add(month)
+    
+    # 按时间顺序处理所有月份
+    sorted_months = sorted(all_months)
+    for month in sorted_months:
+        # 获取当月支出和收入
+        expense_amount = float(expense_map.get(month, 0))
+        income_amount = float(income_map.get(month, 0))
+        
+        # 更新累计净额（先加收入，再减支出）
+        cumulative_net += income_amount
+        cumulative_net -= expense_amount
+
+        # 添加所有月份的数据到显示列表
+        complete_expense_data.append({'month': month, 'total': expense_amount})
+        complete_income_data.append({'month': month, 'total': income_amount})
+        complete_net_data.append({'month': month, 'total': cumulative_net})
+
+        print(f"Debug - Month: {month}")
+        print(f"  Income: {income_amount}")
+        print(f"  Expense: {expense_amount}")
+        print(f"  Cumulative Net: {cumulative_net}")
+
+    print(f"Debug - Monthly data:")
+    print(f"Expenses: {complete_expense_data}")
+    print(f"Income: {complete_income_data}")
+    print(f"Net: {complete_net_data}")
 
     return render_template('expenses.html',
                            expenses=expenses,
                            pagination=pagination,
-                           expense_monthly_data=expense_monthly_data,
+                           expense_monthly_data=complete_expense_data,
                            expense_type_data=expense_type_data,
-                           income_monthly_data=income_monthly_data)
+                           income_monthly_data=complete_income_data,
+                           net_monthly_data=complete_net_data)
 
 
 @app.route('/api/expenses', methods=['GET', 'POST'])
@@ -919,48 +1120,122 @@ def get_expenses():
             return jsonify({'success': False, 'message': f'添加失败：{str(e)}'})
 
     # GET请求处理
-    # 获取月度数据
-    # GET请求处理
-    # 获取支出月度数据
+    # 获取当前日期和6个月前的日期
+    today = datetime.now()
+    six_months_ago = today.replace(day=1)  # 设置为当月1号
+    for _ in range(6):
+        if six_months_ago.month == 1:
+            six_months_ago = six_months_ago.replace(year=six_months_ago.year - 1, month=12)
+        else:
+            six_months_ago = six_months_ago.replace(month=six_months_ago.month - 1)
+
+    # 获取支出月度数据（最近6个月）
     expense_monthly_data = db.session.query(
-        db.func.strftime('%m', Expense.date).label('month'),
+        db.func.strftime('%Y-%m', Expense.date).label('month'),
         db.func.sum(Expense.amount).label('total')
+    ).filter(
+        Expense.date >= six_months_ago.date(),
+        Expense.date <= today.date()
     ).group_by('month').all()
 
-    # 获取支出类型数据
+    # 获取支出类型数据（最近6个月）
     expense_type_data = db.session.query(
         Expense.type,
         db.func.sum(Expense.amount).label('total')
+    ).filter(
+        Expense.date >= six_months_ago.date(),
+        Expense.date <= today.date()
     ).group_by(Expense.type).all()
 
-    # 获取收入月度数据
+    # 获取收入月度数据（最近6个月）
     income_monthly_data = db.session.query(
-        db.func.strftime('%m', Income.date).label('month'),
+        db.func.strftime('%Y-%m', Income.date).label('month'),
         db.func.sum(Income.amount).label('total')
+    ).filter(
+        Income.date >= six_months_ago.date(),
+        Income.date <= today.date()
     ).group_by('month').all()
+
+    # 获取所有历史数据用于计算累计净额
+    all_expenses = db.session.query(
+        db.func.strftime('%Y-%m', Expense.date).label('month'),
+        db.func.sum(Expense.amount).label('total')
+    ).group_by('month').order_by('month').all()
+
+    all_incomes = db.session.query(
+        db.func.strftime('%Y-%m', Income.date).label('month'),
+        db.func.sum(Income.amount).label('total')
+    ).group_by('month').order_by('month').all()
+
+    # 创建月份到金额的映射
+    expense_map = {month: total for month, total in all_expenses}
+    income_map = {month: total for month, total in all_incomes}
+
+    # 计算累计净额（使用所有历史数据）
+    cumulative_net = 0
+    all_months = set()
+    for month, _ in all_expenses:
+        all_months.add(month)
+    for month, _ in all_incomes:
+        all_months.add(month)
+    
+    # 按时间顺序处理所有月份
+    sorted_months = sorted(all_months)
+    net_monthly_data = []
+    for month in sorted_months:
+        # 获取当月支出和收入
+        expense_amount = float(expense_map.get(month, 0))
+        income_amount = float(income_map.get(month, 0))
+        
+        # 更新累计净额（先加收入，再减支出）
+        cumulative_net += income_amount
+        cumulative_net -= expense_amount
+
+        # 添加所有月份的数据到显示列表
+        net_monthly_data.append({
+            'month': month,
+            'total': cumulative_net
+        })
 
     return jsonify({
         'expense_monthly_data': [{'month': m[0], 'total': float(m[1])} for m in expense_monthly_data],
         'expense_type_data': [{'type': t[0], 'total': float(t[1])} for t in expense_type_data],
-        'income_monthly_data': [{'month': m[0], 'total': float(m[1])} for m in income_monthly_data]
+        'income_monthly_data': [{'month': m[0], 'total': float(m[1])} for m in income_monthly_data],
+        'net_monthly_data': net_monthly_data
     })
 
 
 def create_test_user():
     with app.app_context():
-        test_user = Student.query.filter_by(phone='13800138000').first()
-        if not test_user:
-            test_user = Student(
-                student_no='13800138000',
-                name='张三',
+        # 创建第一个管理员账号
+        admin1 = Student.query.filter_by(phone='13800138000').first()
+        if not admin1:
+            admin1 = Student(
+                student_no='ADMIN001',
+                name='系统管理员',
                 phone='13800138000',
-                email='test@example.com',
+                email='admin1@example.com',
                 role='管理员',
                 status='启用'
             )
-            test_user.set_password('123456')
-            db.session.add(test_user)
-            db.session.commit()
+            admin1.set_password('123456')
+            db.session.add(admin1)
+
+        # 创建第二个管理员账号
+        admin2 = Student.query.filter_by(phone='13800138001').first()
+        if not admin2:
+            admin2 = Student(
+                student_no='ADMIN002',
+                name='超级管理员',
+                phone='13800138001',
+                email='admin2@example.com',
+                role='管理员',
+                status='启用'
+            )
+            admin2.set_password('123456')
+            db.session.add(admin2)
+
+        db.session.commit()
 
 
 def create_test_expenses():
@@ -1070,12 +1345,7 @@ def update_expense(id):
         expense = Expense.query.get_or_404(id)
 
         # 更新数据
-        expense.student_no = request.form.get('student_no')
-        expense.name = request.form.get('name')
-        expense.phone = request.form.get('phone')
-        expense.email = request.form.get('email')
-        expense.role = request.form.get('role')
-        expense.status = request.form.get('status')
+        expense.user = request.form.get('user')
         expense.type = request.form.get('type')
         expense.amount = float(request.form.get('amount'))
         expense.purpose = request.form.get('purpose')
@@ -1117,12 +1387,7 @@ def import_expenses():
         # 导入数据
         for _, row in df.iterrows():
             expense = Expense(
-                student_no=row['使用人'],
-                name=row['使用人'],
-                phone=row['使用人'],
-                email=row['使用人'],
-                role=row['使用类型'],
-                status='启用',
+                user=row['使用人'],
                 type=row['使用类型'],
                 amount=float(row['使用额度']),
                 purpose=row['用途'],
@@ -1179,20 +1444,54 @@ def reset_password(student_id):
 def init_db():
     with app.app_context():
         # 创建所有数据库表
-        db.drop_all()
-        db.create_all()
+        db.create_all()  # 只创建表，不删除现有数据
 
-        # 创建测试数据
-        create_test_user()
-        create_test_roles()
-        create_test_expenses()
-        create_test_incomes()
-        create_test_students()
+        # 创建管理员账号
+        create_test_user()  # 创建管理员测试账号
+        create_test_roles()  # 创建角色数据
 
+def create_test_data():
+    """创建测试数据，包括最近6个月的支出和收入记录"""
+    today = datetime.now()
+    
+    # 创建最近6个月的测试数据
+    for i in range(6):
+        # 计算日期
+        if today.month - i <= 0:
+            year = today.year - 1
+            month = today.month - i + 12
+        else:
+            year = today.year
+            month = today.month - i
+            
+        # 创建支出记录
+        expense = Expense(
+            expense_no=f"{year}{month:02d}001",
+            user="测试用户",
+            type="活动经费",
+            amount=1000.0 * (i + 1),
+            purpose=f"{year}年{month}月测试支出",
+            date=datetime(year, month, 1).date()
+        )
+        db.session.add(expense)
+        
+        # 创建收入记录
+        income = Income(
+            income_no=f"{year}{month:02d}001",
+            user="测试用户",
+            amount=2000.0 * (i + 1),
+            date=datetime(year, month, 1).date()
+        )
+        db.session.add(income)
+    
+    db.session.commit()
+
+# 在应用启动时创建测试数据
 if __name__ == '__main__':
     with app.app_context():
-        # 初始化数据库和测试数据
-        init_db()
-        # 启动应用
-        app.run(host='0.0.0.0', debug=True)
+        db.create_all()
+        # 检查是否需要创建测试数据
+        if not Expense.query.first():
+            create_test_data()
+        app.run(host='0.0.0.0', port=8090, debug=True)
 
